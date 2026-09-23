@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import requests
 from datetime import datetime
@@ -340,4 +339,3 @@ else:
     st.info(
         "위에 학교 이름을 입력하면 학교를 선택할 수 있습니다."
     )
-```

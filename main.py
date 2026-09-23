@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import requests
 import pandas as pd
@@ -142,4 +141,3 @@ def get_meal_for_day(
         return [], "NO_DATA"
 
     return
-```

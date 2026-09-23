@@ -85,7 +85,7 @@ def search_school(keyword):
 
         data = response.json()
 
-        # schoolInfo가 없으면 검색 결과 없음
+        # 학교 정보가 없는 경우
         if "schoolInfo" not in data:
             return []
 
@@ -108,16 +108,14 @@ def search_school(keyword):
 
 def get_search_keywords(keyword):
     """
-    사용자가 짧게 입력해도 학교를 찾을 수 있도록
-    학교 이름을 여러 가지 형태로 검색한다.
+    사용자가 학교 이름을 짧게 입력해도
+    학교를 찾을 수 있도록 검색어를 확장한다.
     """
 
     keywords = [keyword]
 
     # -----------------------------------------------------
-    # 예:
-    # 수도여고
-    # → 수도여자고등학교
+    # 여고 → 여자고등학교
     # -----------------------------------------------------
 
     if "여고" in keyword:
@@ -130,9 +128,7 @@ def get_search_keywords(keyword):
         )
 
     # -----------------------------------------------------
-    # 예:
-    # 서울고
-    # → 서울고등학교
+    # 고 → 고등학교
     # -----------------------------------------------------
 
     if keyword.endswith("고"):
@@ -142,9 +138,7 @@ def get_search_keywords(keyword):
         )
 
     # -----------------------------------------------------
-    # 예:
-    # 서울중
-    # → 서울중학교
+    # 중 → 중학교
     # -----------------------------------------------------
 
     if keyword.endswith("중"):
@@ -154,9 +148,7 @@ def get_search_keywords(keyword):
         )
 
     # -----------------------------------------------------
-    # 예:
-    # 서울초
-    # → 서울초등학교
+    # 초 → 초등학교
     # -----------------------------------------------------
 
     if keyword.endswith("초"):
@@ -175,17 +167,21 @@ def get_search_keywords(keyword):
 
 def search_school_with_fallback(keyword):
     """
-    먼저 입력한 이름 그대로 검색하고,
-    검색되지 않으면 학교 이름을 확장해서 검색한다.
+    먼저 입력한 학교 이름 그대로 검색하고,
+    결과가 없으면 확장된 이름으로 검색한다.
     """
 
     all_results = []
 
-    search_keywords = get_search_keywords(keyword)
+    search_keywords = get_search_keywords(
+        keyword
+    )
 
     for word in search_keywords:
 
-        results = search_school(word)
+        results = search_school(
+            word
+        )
 
         for school in results:
 
@@ -193,7 +189,7 @@ def search_school_with_fallback(keyword):
                 "SD_SCHUL_CODE"
             )
 
-            # 같은 학교 중복 방지
+            # 이미 추가된 학교인지 확인
             already_exists = any(
                 x.get("SD_SCHUL_CODE") == school_code
                 for x in all_results
@@ -201,9 +197,11 @@ def search_school_with_fallback(keyword):
 
             if not already_exists:
 
-                all_results.append(school)
+                all_results.append(
+                    school
+                )
 
-        # 검색 결과를 찾으면 종료
+        # 결과를 찾았으면 검색 종료
         if all_results:
             break
 
@@ -227,7 +225,9 @@ def get_meal_data(
 
     params = {
         "Type": "json",
+
         "pIndex": 1,
+
         "pSize": 1000,
 
         "ATPT_OFCDC_SC_CODE": office_code,
@@ -237,13 +237,18 @@ def get_meal_data(
         # 2 = 중식
         "MMEAL_SC_CODE": "2",
 
-        "MLSV_FROM_YMD": start_date.strftime("%Y%m%d"),
+        "MLSV_FROM_YMD": start_date.strftime(
+            "%Y%m%d"
+        ),
 
-        "MLSV_TO_YMD": end_date.strftime("%Y%m%d")
+        "MLSV_TO_YMD": end_date.strftime(
+            "%Y%m%d"
+        )
     }
 
     # 인증키가 있으면 사용
     if NEIS_KEY:
+
         params["KEY"] = NEIS_KEY
 
     try:
@@ -260,12 +265,14 @@ def get_meal_data(
 
         # 급식 정보가 없는 경우
         if "mealServiceDietInfo" not in data:
+
             return []
 
         # row 데이터 찾기
         for item in data["mealServiceDietInfo"]:
 
             if "row" in item:
+
                 return item["row"]
 
         return []
@@ -281,10 +288,10 @@ def get_meal_data(
 
 def clean_menu_name(menu):
     """
-    NEIS 급식 데이터의 메뉴 이름에서
-    알레르기 번호, 괄호 설명 등을 제거한다.
+    급식 메뉴에서 알레르기 번호와 불필요한 표시를 제거한다.
 
     예:
+
     미역국5.6.13.
     → 미역국
 
@@ -295,7 +302,7 @@ def clean_menu_name(menu):
     menu = str(menu)
 
     # -----------------------------------------------------
-    # <br> 태그 제거
+    # HTML 줄바꿈 태그 제거
     # -----------------------------------------------------
 
     menu = re.sub(
@@ -326,7 +333,7 @@ def clean_menu_name(menu):
     )
 
     # -----------------------------------------------------
-    # 끝에 붙은 알레르기 번호 제거
+    # 알레르기 번호 제거
     #
     # 예:
     # 5.6.13.
@@ -346,7 +353,7 @@ def clean_menu_name(menu):
     )
 
     # -----------------------------------------------------
-    # 앞뒤 표시 제거
+    # 앞뒤 공백 및 기호 제거
     # -----------------------------------------------------
 
     menu = menu.strip()
@@ -356,7 +363,7 @@ def clean_menu_name(menu):
     )
 
     # -----------------------------------------------------
-    # 여러 공백 정리
+    # 여러 공백을 하나로 정리
     # -----------------------------------------------------
 
     menu = re.sub(
@@ -369,21 +376,24 @@ def clean_menu_name(menu):
 
 
 # =========================================================
-# 국인지 확인
+# 국 종류인지 확인
 # =========================================================
 
 def is_soup(menu):
     """
-    메뉴가 국/찌개/탕/전골 등의 종류인지 확인한다.
+    메뉴가 국, 찌개, 탕, 전골 등의 종류인지 확인한다.
     """
 
-    menu = clean_menu_name(menu)
+    menu = clean_menu_name(
+        menu
+    )
 
     if not menu:
+
         return False
 
     # -----------------------------------------------------
-    # 이름이 다음 단어로 끝나는 경우
+    # 이름 끝부분으로 국 종류 확인
     # -----------------------------------------------------
 
     soup_endings = [
@@ -396,6 +406,7 @@ def is_soup(menu):
     for ending in soup_endings:
 
         if menu.endswith(ending):
+
             return True
 
     # -----------------------------------------------------
@@ -420,6 +431,7 @@ def is_soup(menu):
     ]
 
     if menu in soup_names:
+
         return True
 
     return False
@@ -431,7 +443,7 @@ def is_soup(menu):
 
 def analyze_soups(meal_rows):
     """
-    급식 데이터에서 국/찌개/탕/전골 종류를 찾아
+    급식 데이터에서 국 종류를 찾아
     각각 몇 번 등장했는지 계산한다.
     """
 
@@ -443,7 +455,10 @@ def analyze_soups(meal_rows):
 
     for row in meal_rows:
 
-        # 점심만 사용
+        # -------------------------------------------------
+        # 점심 데이터만 사용
+        # -------------------------------------------------
+
         meal_code = str(
             row.get(
                 "MMEAL_SC_CODE",
@@ -452,19 +467,24 @@ def analyze_soups(meal_rows):
         )
 
         if meal_code != "2":
+
             continue
 
-        # 급식 메뉴
+        # -------------------------------------------------
+        # 급식 메뉴 가져오기
+        # -------------------------------------------------
+
         menu_text = row.get(
             "DDISH_NM",
             ""
         )
 
         if not menu_text:
+
             continue
 
         # -------------------------------------------------
-        # <br> 기준으로 메뉴 분리
+        # <br> 기준으로 메뉴를 나눈다.
         # -------------------------------------------------
 
         menus = re.split(
@@ -479,18 +499,26 @@ def analyze_soups(meal_rows):
 
         for menu in menus:
 
-            menu = clean_menu_name(menu)
+            menu = clean_menu_name(
+                menu
+            )
 
             if not menu:
+
                 continue
 
+            # -------------------------------------------------
             # 국 종류인지 확인
+            # -------------------------------------------------
+
             if is_soup(menu):
 
-                soup_list.append(menu)
+                soup_list.append(
+                    menu
+                )
 
     # -----------------------------------------------------
-    # 국이 하나도 없는 경우
+    # 국 종류가 하나도 없는 경우
     # -----------------------------------------------------
 
     if not soup_list:
@@ -504,9 +532,6 @@ def analyze_soups(meal_rows):
 
     # -----------------------------------------------------
     # 국 종류별 횟수 계산
-    #
-    # value_counts()는 같은 횟수일 때
-    # 먼저 등장한 메뉴의 순서를 유지한다.
     # -----------------------------------------------------
 
     count_series = pd.Series(
@@ -541,7 +566,7 @@ school_keyword = st.text_input(
 
 
 # =========================================================
-# 학교 검색 실행
+# 학교 검색
 # =========================================================
 
 if school_keyword:
@@ -555,7 +580,7 @@ if school_keyword:
         )
 
     # -----------------------------------------------------
-    # 검색 결과 없음
+    # 검색 결과가 없는 경우
     # -----------------------------------------------------
 
     if not schools:
@@ -566,7 +591,7 @@ if school_keyword:
         )
 
     # -----------------------------------------------------
-    # 검색 결과 있음
+    # 검색 결과가 있는 경우
     # -----------------------------------------------------
 
     else:
@@ -576,7 +601,7 @@ if school_keyword:
         )
 
         # -------------------------------------------------
-        # 학교 선택 목록 만들기
+        # 학교 선택 목록
         # -------------------------------------------------
 
         school_options = []
@@ -729,7 +754,7 @@ if school_keyword:
                     )
 
                     # -------------------------------------------------
-                    # 분석 결과 표시
+                    # 분석 결과
                     # -------------------------------------------------
 
                     st.divider()
@@ -753,21 +778,14 @@ if school_keyword:
                     else:
 
                         # =================================================
-                        # 중요!
+                        # 가장 많이 나온 국 찾기
+                        # =================================================
+
+                        # 횟수가 많은 순서로 정렬한다.
                         #
-                        # 가장 많이 나온 메뉴 찾기
-                        #
-                        # 같은 횟수라면 먼저 등장한 메뉴를 우선한다.
-                        #
-                        # 예:
-                        #
-                        # 나가사키짬뽕국  4
-                        # 순대국          4
-                        # 가쓰오유부장국  4
-                        # 근대된장국      4
-                        #
-                        # → 나가사키짬뽕국
-                        #
+                        # 같은 횟수라면
+                        # 원래 데이터에서 먼저 등장한 메뉴가
+                        # 먼저 오도록 stable 정렬을 사용한다.
                         # =================================================
 
                         top_soup_df = soup_df.sort_values(
@@ -799,26 +817,48 @@ if school_keyword:
                             )
 
                         # =================================================
-                        # 그래프용 데이터
+                        # ⭐ 그래프용 데이터
+                        # =================================================
+                        #
+                        # 여기만 중요하게 수정했다!
+                        #
+                        # 기존:
+                        #
+                        # ascending=True
+                        #
+                        # → 적은 횟수부터 많은 횟수
+                        #
+                        # 수정:
+                        #
+                        # ascending=False
+                        #
+                        # → 많은 횟수부터 적은 횟수
+                        #
+                        # 그리고 sort=False를 사용해서
+                        # Streamlit이 다시 자동 정렬하지 않고
+                        # 우리가 만든 순서를 그대로 사용한다.
+                        #
                         # =================================================
 
                         chart_df = soup_df.sort_values(
                             "횟수",
-                            ascending=True,
+                            ascending=False,
                             kind="stable"
                         )
 
-                        # -------------------------------------------------
+                        # =================================================
                         # 막대그래프
-                        # -------------------------------------------------
+                        # =================================================
 
                         st.bar_chart(
                             chart_df.set_index(
                                 "국 종류"
-                            )[
-                                ["횟수"]
-                            ],
-                            use_container_width=True
+                            )[["횟수"]],
+
+                            use_container_width=True,
+
+                            # ⭐ 현재 데이터 순서를 그대로 사용
+                            sort=False
                         )
 
                         # =================================================
@@ -830,7 +870,7 @@ if school_keyword:
                         )
 
                         # -------------------------------------------------
-                        # 표는 많이 나온 순서
+                        # 표도 많이 나온 순서로 표시
                         # -------------------------------------------------
 
                         display_df = soup_df.sort_values(
@@ -841,7 +881,10 @@ if school_keyword:
                             drop=True
                         )
 
+                        # -------------------------------------------------
                         # 순번 추가
+                        # -------------------------------------------------
+
                         display_df.index = (
                             display_df.index + 1
                         )

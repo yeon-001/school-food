@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import requests
 import pandas as pd
@@ -492,4 +491,3 @@ if schools:
                     f"일부 날짜는 API 응답 문제로 제외되었습니다: "
                     f"{error_count}일"
                 )
-```

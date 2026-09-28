@@ -2,7 +2,9 @@ import streamlit as st
 import requests
 import pandas as pd
 import re
-from datetime import date
+import plotly.express as px
+from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
 
 
 # =========================================================
@@ -10,8 +12,8 @@ from datetime import date
 # =========================================================
 
 st.set_page_config(
-    page_title="학교 급식 국 종류 분석",
-    page_icon="🍲",
+    page_title="학교 급식 찾아보기",
+    page_icon="🍚",
     layout="wide"
 )
 
@@ -20,11 +22,10 @@ st.set_page_config(
 # 제목
 # =========================================================
 
-st.title("🍲 학교 급식 국 종류 분석")
+st.title("🍚 학교 급식 찾아보기")
 
 st.write(
-    "학교를 검색하고 선택하면 2026년 3월 4일부터 9월 23일까지 "
-    "그 학교 급식표에 나온 국 종류의 횟수를 분석합니다."
+    "학교를 검색하고 날짜를 선택하면 그날의 중식 메뉴를 확인할 수 있습니다."
 )
 
 
@@ -32,46 +33,61 @@ st.write(
 # NEIS API 주소
 # =========================================================
 
-SCHOOL_API = "https://open.neis.go.kr/hub/schoolInfo"
+SCHOOL_API = (
+    "https://open.neis.go.kr/hub/schoolInfo"
+)
 
-MEAL_API = "https://open.neis.go.kr/hub/mealServiceDietInfo"
-
-
-# =========================================================
-# 분석 기간
-# =========================================================
-
-START_DATE = date(2026, 3, 4)
-
-END_DATE = date(2026, 9, 23)
+MEAL_API = (
+    "https://open.neis.go.kr/hub/mealServiceDietInfo"
+)
 
 
 # =========================================================
-# Streamlit Secrets에서 NEIS 인증키 가져오기
+# 한국 시간
 # =========================================================
 
-NEIS_KEY = st.secrets.get("NEIS_KEY", "")
+KST = ZoneInfo("Asia/Seoul")
+
+today_korea = datetime.now(
+    KST
+).date()
 
 
 # =========================================================
-# 학교 검색 함수
+# 국 종류 분석 기간
 # =========================================================
 
+START_DATE = date(
+    2026,
+    3,
+    4
+)
+
+END_DATE = date(
+    2026,
+    9,
+    23
+)
+
+
+# =========================================================
+# 학교 검색
+# =========================================================
+
+@st.cache_data(ttl=3600)
 def search_school(keyword):
     """
-    학교 이름으로 NEIS 학교정보를 검색한다.
+    학교기본정보 API로 학교를 검색한다.
+    인증키 없이 사용한다.
+    한 번에 최대 5건을 가져온다.
     """
 
     params = {
         "Type": "json",
+        "SCHUL_NM": keyword,
         "pIndex": 1,
-        "pSize": 100,
-        "SCHUL_NM": keyword
+        "pSize": 5
     }
-
-    # 인증키가 있으면 사용
-    if NEIS_KEY:
-        params["KEY"] = NEIS_KEY
 
     try:
 
@@ -85,11 +101,9 @@ def search_school(keyword):
 
         data = response.json()
 
-        # 학교 정보가 없는 경우
         if "schoolInfo" not in data:
             return []
 
-        # row 데이터 찾기
         for item in data["schoolInfo"]:
 
             if "row" in item:
@@ -103,20 +117,28 @@ def search_school(keyword):
 
 
 # =========================================================
-# 학교 이름 확장 검색
+# 학교 검색어 확장
 # =========================================================
 
 def get_search_keywords(keyword):
     """
-    사용자가 학교 이름을 짧게 입력해도
-    학교를 찾을 수 있도록 검색어를 확장한다.
+    짧게 입력한 학교 이름을 정식 이름 형태로 확장한다.
+
+    예:
+    수도여고
+    → 수도여고
+    → 수도여자고등학교
+
+    서울고
+    → 서울고
+    → 서울고등학교
     """
 
-    keywords = [keyword]
+    keywords = [
+        keyword
+    ]
 
-    # -----------------------------------------------------
     # 여고 → 여자고등학교
-    # -----------------------------------------------------
 
     if "여고" in keyword:
 
@@ -127,38 +149,38 @@ def get_search_keywords(keyword):
             )
         )
 
-    # -----------------------------------------------------
-    # 고 → 고등학교
-    # -----------------------------------------------------
+    # 마지막 글자가 고
 
     if keyword.endswith("고"):
 
         keywords.append(
-            keyword[:-1] + "고등학교"
+            keyword[:-1]
+            + "고등학교"
         )
 
-    # -----------------------------------------------------
-    # 중 → 중학교
-    # -----------------------------------------------------
+    # 마지막 글자가 중
 
     if keyword.endswith("중"):
 
         keywords.append(
-            keyword[:-1] + "중학교"
+            keyword[:-1]
+            + "중학교"
         )
 
-    # -----------------------------------------------------
-    # 초 → 초등학교
-    # -----------------------------------------------------
+    # 마지막 글자가 초
 
     if keyword.endswith("초"):
 
         keywords.append(
-            keyword[:-1] + "초등학교"
+            keyword[:-1]
+            + "초등학교"
         )
 
-    # 중복 제거
-    return list(dict.fromkeys(keywords))
+    return list(
+        dict.fromkeys(
+            keywords
+        )
+    )
 
 
 # =========================================================
@@ -166,10 +188,6 @@ def get_search_keywords(keyword):
 # =========================================================
 
 def search_school_with_fallback(keyword):
-    """
-    먼저 입력한 학교 이름 그대로 검색하고,
-    결과가 없으면 확장된 이름으로 검색한다.
-    """
 
     all_results = []
 
@@ -189,9 +207,10 @@ def search_school_with_fallback(keyword):
                 "SD_SCHUL_CODE"
             )
 
-            # 이미 추가된 학교인지 확인
             already_exists = any(
-                x.get("SD_SCHUL_CODE") == school_code
+                x.get(
+                    "SD_SCHUL_CODE"
+                ) == school_code
                 for x in all_results
             )
 
@@ -201,78 +220,79 @@ def search_school_with_fallback(keyword):
                     school
                 )
 
-        # 결과를 찾았으면 검색 종료
+        # 결과가 있으면 더 이상 확장 검색하지 않는다.
+
         if all_results:
+
             break
 
     return all_results
 
 
 # =========================================================
-# 급식 데이터 가져오기
+# 특정 날짜의 중식 가져오기
 # =========================================================
 
 @st.cache_data(ttl=3600)
 def get_meal_data(
     office_code,
     school_code,
-    start_date,
-    end_date
+    selected_date
 ):
     """
-    선택한 학교의 지정 기간 점심 급식 데이터를 가져온다.
+    특정 학교의 특정 날짜 중식을 가져온다.
+    하루만 조회하므로 인증키 없이도 충분하다.
     """
 
     params = {
+
         "Type": "json",
 
-        "pIndex": 1,
+        "ATPT_OFCDC_SC_CODE":
+            office_code,
 
-        "pSize": 1000,
-
-        "ATPT_OFCDC_SC_CODE": office_code,
-
-        "SD_SCHUL_CODE": school_code,
+        "SD_SCHUL_CODE":
+            school_code,
 
         # 2 = 중식
-        "MMEAL_SC_CODE": "2",
+        "MMEAL_SC_CODE":
+            "2",
 
-        "MLSV_FROM_YMD": start_date.strftime(
-            "%Y%m%d"
-        ),
+        "MLSV_FROM_YMD":
+            selected_date.strftime(
+                "%Y%m%d"
+            ),
 
-        "MLSV_TO_YMD": end_date.strftime(
-            "%Y%m%d"
-        )
+        "MLSV_TO_YMD":
+            selected_date.strftime(
+                "%Y%m%d"
+            ),
+
+        "pSize": 5,
+
+        "pIndex": 1
     }
-
-    # 인증키가 있으면 사용
-    if NEIS_KEY:
-
-        params["KEY"] = NEIS_KEY
 
     try:
 
         response = requests.get(
             MEAL_API,
             params=params,
-            timeout=30
+            timeout=10
         )
 
         response.raise_for_status()
 
         data = response.json()
 
-        # 급식 정보가 없는 경우
         if "mealServiceDietInfo" not in data:
-
             return []
 
-        # row 데이터 찾기
-        for item in data["mealServiceDietInfo"]:
+        for item in data[
+            "mealServiceDietInfo"
+        ]:
 
             if "row" in item:
-
                 return item["row"]
 
         return []
@@ -283,27 +303,175 @@ def get_meal_data(
 
 
 # =========================================================
+# 여러 날의 급식 데이터 가져오기
+# =========================================================
+
+@st.cache_data(ttl=3600)
+def get_meal_data_chunk(
+    office_code,
+    school_code,
+    start_date,
+    end_date
+):
+    """
+    인증키가 없는 경우 첫 5건만 반환될 수 있으므로
+    최대 5일 정도의 짧은 기간만 조회한다.
+    """
+
+    params = {
+
+        "Type": "json",
+
+        "ATPT_OFCDC_SC_CODE":
+            office_code,
+
+        "SD_SCHUL_CODE":
+            school_code,
+
+        "MMEAL_SC_CODE":
+            "2",
+
+        "MLSV_FROM_YMD":
+            start_date.strftime(
+                "%Y%m%d"
+            ),
+
+        "MLSV_TO_YMD":
+            end_date.strftime(
+                "%Y%m%d"
+            ),
+
+        "pSize": 5,
+
+        "pIndex": 1
+    }
+
+    try:
+
+        response = requests.get(
+            MEAL_API,
+            params=params,
+            timeout=20
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        if "mealServiceDietInfo" not in data:
+            return []
+
+        for item in data[
+            "mealServiceDietInfo"
+        ]:
+
+            if "row" in item:
+                return item["row"]
+
+        return []
+
+    except Exception:
+
+        return []
+
+
+# =========================================================
+# 전체 기간 급식 데이터
+# =========================================================
+
+@st.cache_data(ttl=3600)
+def get_all_meal_data(
+    office_code,
+    school_code,
+    start_date,
+    end_date
+):
+    """
+    전체 기간을 5일씩 나눠서 가져온다.
+    """
+
+    all_rows = []
+
+    current_start = start_date
+
+    while current_start <= end_date:
+
+        current_end = min(
+            current_start
+            + timedelta(days=4),
+            end_date
+        )
+
+        rows = get_meal_data_chunk(
+            office_code,
+            school_code,
+            current_start,
+            current_end
+        )
+
+        all_rows.extend(
+            rows
+        )
+
+        current_start = (
+            current_end
+            + timedelta(days=1)
+        )
+
+    # 중복 제거
+
+    unique_rows = {}
+
+    for row in all_rows:
+
+        meal_date = row.get(
+            "MLSV_YMD",
+            ""
+        )
+
+        meal_code = row.get(
+            "MMEAL_SC_CODE",
+            "2"
+        )
+
+        key = (
+            meal_date,
+            meal_code
+        )
+
+        unique_rows[key] = row
+
+    return list(
+        unique_rows.values()
+    )
+
+
+# =========================================================
+# 메뉴 원본 표시용
+# =========================================================
+
+def format_menu(menu_text):
+
+    if not menu_text:
+        return ""
+
+    return re.sub(
+        r"<br\s*/?>",
+        "\n",
+        menu_text,
+        flags=re.IGNORECASE
+    ).strip()
+
+
+# =========================================================
 # 메뉴 이름 정리
 # =========================================================
 
 def clean_menu_name(menu):
-    """
-    급식 메뉴에서 알레르기 번호와 불필요한 표시를 제거한다.
-
-    예:
-
-    미역국5.6.13.
-    → 미역국
-
-    김치찌개5.6.9.
-    → 김치찌개
-    """
 
     menu = str(menu)
 
-    # -----------------------------------------------------
-    # HTML 줄바꿈 태그 제거
-    # -----------------------------------------------------
+    # 줄바꿈 태그 제거
 
     menu = re.sub(
         r"<br\s*/?>",
@@ -312,9 +480,7 @@ def clean_menu_name(menu):
         flags=re.IGNORECASE
     )
 
-    # -----------------------------------------------------
-    # 괄호 안 내용 제거
-    # -----------------------------------------------------
+    # 괄호 제거
 
     menu = re.sub(
         r"\([^)]*\)",
@@ -322,9 +488,7 @@ def clean_menu_name(menu):
         menu
     )
 
-    # -----------------------------------------------------
-    # 대괄호 안 내용 제거
-    # -----------------------------------------------------
+    # 대괄호 제거
 
     menu = re.sub(
         r"\[[^\]]*\]",
@@ -332,13 +496,7 @@ def clean_menu_name(menu):
         menu
     )
 
-    # -----------------------------------------------------
-    # 알레르기 번호 제거
-    #
-    # 예:
-    # 5.6.13.
-    # 5.6.9
-    # -----------------------------------------------------
+    # 5.6.13. 같은 알레르기 번호 제거
 
     menu = re.sub(
         r"(?:\d+\.)+\s*$",
@@ -346,25 +504,19 @@ def clean_menu_name(menu):
         menu
     )
 
+    # 숫자만 붙은 경우 제거
+
     menu = re.sub(
         r"(?:\d+\s*)+$",
         "",
         menu
     )
 
-    # -----------------------------------------------------
-    # 앞뒤 공백 및 기호 제거
-    # -----------------------------------------------------
-
     menu = menu.strip()
 
     menu = menu.strip(
         " *·"
     )
-
-    # -----------------------------------------------------
-    # 여러 공백을 하나로 정리
-    # -----------------------------------------------------
 
     menu = re.sub(
         r"\s+",
@@ -376,25 +528,17 @@ def clean_menu_name(menu):
 
 
 # =========================================================
-# 국 종류인지 확인
+# 국인지 확인
 # =========================================================
 
 def is_soup(menu):
-    """
-    메뉴가 국, 찌개, 탕, 전골 등의 종류인지 확인한다.
-    """
 
     menu = clean_menu_name(
         menu
     )
 
     if not menu:
-
         return False
-
-    # -----------------------------------------------------
-    # 이름 끝부분으로 국 종류 확인
-    # -----------------------------------------------------
 
     soup_endings = [
         "국",
@@ -405,19 +549,16 @@ def is_soup(menu):
 
     for ending in soup_endings:
 
-        if menu.endswith(ending):
+        if menu.endswith(
+            ending
+        ):
 
             return True
-
-    # -----------------------------------------------------
-    # 특별히 국 종류로 처리할 메뉴
-    # -----------------------------------------------------
 
     soup_names = [
 
         "육개장",
         "닭개장",
-
         "감자탕",
         "갈비탕",
         "곰탕",
@@ -425,7 +566,6 @@ def is_soup(menu):
         "삼계탕",
         "추어탕",
         "도가니탕",
-
         "순대국",
         "순댓국"
     ]
@@ -442,22 +582,10 @@ def is_soup(menu):
 # =========================================================
 
 def analyze_soups(meal_rows):
-    """
-    급식 데이터에서 국 종류를 찾아
-    각각 몇 번 등장했는지 계산한다.
-    """
 
     soup_list = []
 
-    # -----------------------------------------------------
-    # 급식 데이터 하나씩 확인
-    # -----------------------------------------------------
-
     for row in meal_rows:
-
-        # -------------------------------------------------
-        # 점심 데이터만 사용
-        # -------------------------------------------------
 
         meal_code = str(
             row.get(
@@ -467,12 +595,7 @@ def analyze_soups(meal_rows):
         )
 
         if meal_code != "2":
-
             continue
-
-        # -------------------------------------------------
-        # 급식 메뉴 가져오기
-        # -------------------------------------------------
 
         menu_text = row.get(
             "DDISH_NM",
@@ -480,22 +603,13 @@ def analyze_soups(meal_rows):
         )
 
         if not menu_text:
-
             continue
-
-        # -------------------------------------------------
-        # <br> 기준으로 메뉴를 나눈다.
-        # -------------------------------------------------
 
         menus = re.split(
             r"<br\s*/?>",
             menu_text,
             flags=re.IGNORECASE
         )
-
-        # -------------------------------------------------
-        # 각각의 메뉴 확인
-        # -------------------------------------------------
 
         for menu in menus:
 
@@ -504,22 +618,13 @@ def analyze_soups(meal_rows):
             )
 
             if not menu:
-
                 continue
-
-            # -------------------------------------------------
-            # 국 종류인지 확인
-            # -------------------------------------------------
 
             if is_soup(menu):
 
                 soup_list.append(
                     menu
                 )
-
-    # -----------------------------------------------------
-    # 국 종류가 하나도 없는 경우
-    # -----------------------------------------------------
 
     if not soup_list:
 
@@ -530,30 +635,24 @@ def analyze_soups(meal_rows):
             ]
         )
 
-    # -----------------------------------------------------
-    # 국 종류별 횟수 계산
-    # -----------------------------------------------------
-
     count_series = pd.Series(
         soup_list
     ).value_counts()
 
-    # -----------------------------------------------------
-    # 데이터프레임으로 변환
-    # -----------------------------------------------------
-
     result = pd.DataFrame({
 
-        "국 종류": count_series.index,
+        "국 종류":
+            count_series.index,
 
-        "횟수": count_series.values
+        "횟수":
+            count_series.values
     })
 
     return result
 
 
 # =========================================================
-# 학교 검색창
+# 학교 검색
 # =========================================================
 
 st.subheader("🏫 학교 검색")
@@ -566,10 +665,10 @@ school_keyword = st.text_input(
 
 
 # =========================================================
-# 학교 검색
+# 학교 검색 결과
 # =========================================================
 
-if school_keyword:
+if school_keyword.strip():
 
     with st.spinner(
         "학교를 검색하고 있습니다..."
@@ -580,18 +679,18 @@ if school_keyword:
         )
 
     # -----------------------------------------------------
-    # 검색 결과가 없는 경우
+    # 학교 없음
     # -----------------------------------------------------
 
     if not schools:
 
-        st.warning(
-            "검색된 학교가 없습니다. "
+        st.info(
+            "🔎 검색된 학교가 없습니다. "
             "학교 이름을 다시 확인해 주세요."
         )
 
     # -----------------------------------------------------
-    # 검색 결과가 있는 경우
+    # 학교 있음
     # -----------------------------------------------------
 
     else:
@@ -599,10 +698,6 @@ if school_keyword:
         st.success(
             f"{len(schools)}개의 학교를 찾았습니다."
         )
-
-        # -------------------------------------------------
-        # 학교 선택 목록
-        # -------------------------------------------------
 
         school_options = []
 
@@ -622,23 +717,20 @@ if school_keyword:
                 f"{school_name} ({region})"
             )
 
-        # -------------------------------------------------
-        # 학교 선택
-        # -------------------------------------------------
-
         selected_index = st.selectbox(
-            "분석할 학교를 선택하세요",
-            range(len(school_options)),
-            format_func=lambda x: school_options[x]
+            "학교를 선택하세요",
+            range(
+                len(
+                    school_options
+                )
+            ),
+            format_func=lambda x:
+                school_options[x]
         )
 
         selected_school = schools[
             selected_index
         ]
-
-        # -------------------------------------------------
-        # 선택한 학교 정보
-        # -------------------------------------------------
 
         school_name = selected_school.get(
             "SCHUL_NM",
@@ -660,9 +752,9 @@ if school_keyword:
             ""
         )
 
-        # -------------------------------------------------
-        # 학교 정보 표시
-        # -------------------------------------------------
+        # =================================================
+        # 선택한 학교
+        # =================================================
 
         st.divider()
 
@@ -684,216 +776,389 @@ if school_keyword:
                 f"**지역:** {region}"
             )
 
-        # -------------------------------------------------
-        # 분석 기간 표시
-        # -------------------------------------------------
+        # =================================================
+        # 1. 날짜별 급식 찾아보기
+        # =================================================
+
+        st.divider()
+
+        st.header(
+            "🍚 날짜별 급식 찾아보기"
+        )
+
+        selected_date = st.date_input(
+            "급식 날짜를 선택하세요",
+            value=today_korea
+        )
+
+        if st.button(
+            "🍚 급식 확인하기",
+            type="primary",
+            use_container_width=True
+        ):
+
+            with st.spinner(
+                "급식 정보를 가져오는 중입니다..."
+            ):
+
+                meal_rows = get_meal_data(
+                    office_code,
+                    school_code,
+                    selected_date
+                )
+
+            if not meal_rows:
+
+                st.info(
+                    f"📭 "
+                    f"{selected_date.strftime('%Y년 %m월 %d일')}에는 "
+                    "등록된 중식 급식 정보가 없습니다."
+                )
+
+            else:
+
+                lunch_row = None
+
+                for row in meal_rows:
+
+                    if str(
+                        row.get(
+                            "MMEAL_SC_CODE",
+                            ""
+                        )
+                    ) == "2":
+
+                        lunch_row = row
+
+                        break
+
+                if lunch_row is None:
+
+                    st.info(
+                        f"📭 "
+                        f"{selected_date.strftime('%Y년 %m월 %d일')}에는 "
+                        "등록된 중식 급식 정보가 없습니다."
+                    )
+
+                else:
+
+                    st.subheader(
+                        f"🍽️ "
+                        f"{selected_date.strftime('%Y년 %m월 %d일')} 중식"
+                    )
+
+                    menu_text = lunch_row.get(
+                        "DDISH_NM",
+                        ""
+                    )
+
+                    calorie = lunch_row.get(
+                        "CAL_INFO",
+                        ""
+                    )
+
+                    # -------------------------------------------------
+                    # 메뉴
+                    # -------------------------------------------------
+
+                    st.markdown(
+                        "### 🍱 오늘의 메뉴"
+                    )
+
+                    if menu_text:
+
+                        formatted_menu = format_menu(
+                            menu_text
+                        )
+
+                        menu_items = (
+                            formatted_menu
+                            .split("\n")
+                        )
+
+                        for menu in menu_items:
+
+                            menu = menu.strip()
+
+                            if menu:
+
+                                st.write(
+                                    f"• {menu}"
+                                )
+
+                    else:
+
+                        st.info(
+                            "메뉴 정보가 등록되어 있지 않습니다."
+                        )
+
+                    # -------------------------------------------------
+                    # 칼로리
+                    # -------------------------------------------------
+
+                    st.markdown(
+                        "### 🔥 칼로리"
+                    )
+
+                    if calorie:
+
+                        st.write(
+                            calorie
+                        )
+
+                    else:
+
+                        st.info(
+                            "칼로리 정보가 등록되어 있지 않습니다."
+                        )
+
+                    # -------------------------------------------------
+                    # 원본 메뉴
+                    # -------------------------------------------------
+
+                    with st.expander(
+                        "📋 원본 메뉴 정보 보기"
+                    ):
+
+                        st.write(
+                            menu_text
+                        )
+
+        # =================================================
+        # 2. 국 종류 분석
+        # =================================================
+
+        st.divider()
+
+        st.header(
+            "🍲 국 종류 분석"
+        )
+
+        st.write(
+            "2026년 3월 4일부터 9월 23일까지 "
+            "이 학교의 중식에 나온 국·찌개·탕·전골 종류를 분석합니다."
+        )
 
         st.info(
             "📅 분석 기간: "
             "2026년 3월 4일 ~ 2026년 9월 23일"
         )
 
-        # -------------------------------------------------
-        # 분석 버튼
-        # -------------------------------------------------
-
         if st.button(
             "🍲 국 종류 분석하기",
-            type="primary",
+            type="secondary",
             use_container_width=True
         ):
 
-            # -------------------------------------------------
-            # 인증키 확인
-            # -------------------------------------------------
+            with st.spinner(
+                f"{school_name}의 "
+                "전체 급식 데이터를 분석하고 있습니다..."
+            ):
 
-            if not NEIS_KEY:
+                all_meal_rows = get_all_meal_data(
+                    office_code,
+                    school_code,
+                    START_DATE,
+                    END_DATE
+                )
 
-                st.warning(
-                    "NEIS_KEY가 설정되지 않았습니다. "
-                    "Streamlit Cloud의 Secrets에 "
-                    "NEIS_KEY를 등록해야 "
-                    "전체 기간의 급식 데이터를 가져올 수 있습니다."
+            if not all_meal_rows:
+
+                st.info(
+                    "해당 기간에 급식 데이터가 없습니다."
                 )
 
             else:
 
-                # -------------------------------------------------
-                # 급식 데이터 가져오기
-                # -------------------------------------------------
+                soup_df = analyze_soups(
+                    all_meal_rows
+                )
 
-                with st.spinner(
-                    f"{school_name}의 급식 데이터를 분석하고 있습니다..."
-                ):
-
-                    meal_rows = get_meal_data(
-                        office_code,
-                        school_code,
-                        START_DATE,
-                        END_DATE
-                    )
-
-                # -------------------------------------------------
-                # 급식 데이터가 없는 경우
-                # -------------------------------------------------
-
-                if not meal_rows:
+                if soup_df.empty:
 
                     st.info(
-                        "해당 기간에 급식 데이터가 없습니다."
+                        "해당 기간의 급식표에서 "
+                        "국·찌개·탕·전골 종류를 "
+                        "찾지 못했습니다."
                     )
 
                 else:
-
-                    # -------------------------------------------------
-                    # 국 종류 분석
-                    # -------------------------------------------------
-
-                    soup_df = analyze_soups(
-                        meal_rows
-                    )
-
-                    # -------------------------------------------------
-                    # 분석 결과
-                    # -------------------------------------------------
-
-                    st.divider()
 
                     st.subheader(
                         "🍲 국 종류별 등장 횟수"
                     )
 
                     # -------------------------------------------------
-                    # 국 데이터가 없는 경우
+                    # 횟수 내림차순
                     # -------------------------------------------------
 
-                    if soup_df.empty:
-
-                        st.info(
-                            "해당 기간의 급식표에서 "
-                            "국·찌개·탕·전골 종류를 "
-                            "찾지 못했습니다."
-                        )
-
-                    else:
-
-                        # =================================================
-                        # 가장 많이 나온 국 찾기
-                        # =================================================
-
-                        # 횟수가 많은 순서로 정렬한다.
-                        #
-                        # 같은 횟수라면
-                        # 원래 데이터에서 먼저 등장한 메뉴가
-                        # 먼저 오도록 stable 정렬을 사용한다.
-                        # =================================================
-
-                        top_soup_df = soup_df.sort_values(
+                    sorted_soup_df = (
+                        soup_df
+                        .sort_values(
                             "횟수",
                             ascending=False,
                             kind="stable"
                         )
-
-                        top_soup = top_soup_df.iloc[0]
-
-                        # -------------------------------------------------
-                        # 가장 많이 나온 국 / 횟수
-                        # -------------------------------------------------
-
-                        col1, col2 = st.columns(2)
-
-                        with col1:
-
-                            st.metric(
-                                "가장 많이 나온 국",
-                                top_soup["국 종류"]
-                            )
-
-                        with col2:
-
-                            st.metric(
-                                "등장 횟수",
-                                f"{int(top_soup['횟수'])}회"
-                            )
-
-                        # =================================================
-                        # ⭐ 그래프용 데이터
-                        # =================================================
-                        #
-                        # 여기만 중요하게 수정했다!
-                        #
-                        # 기존:
-                        #
-                        # ascending=True
-                        #
-                        # → 적은 횟수부터 많은 횟수
-                        #
-                        # 수정:
-                        #
-                        # ascending=False
-                        #
-                        # → 많은 횟수부터 적은 횟수
-                        #
-                        # 그리고 sort=False를 사용해서
-                        # Streamlit이 다시 자동 정렬하지 않고
-                        # 우리가 만든 순서를 그대로 사용한다.
-                        #
-                        # =================================================
-
-                        chart_df = soup_df.sort_values(
-                            "횟수",
-                            ascending=False,
-                            kind="stable"
-                        )
-
-                        # =================================================
-                        # 막대그래프
-                        # =================================================
-
-                        st.bar_chart(
-                            chart_df.set_index(
-                                "국 종류"
-                            )[["횟수"]],
-
-                            use_container_width=True,
-
-                            # ⭐ 현재 데이터 순서를 그대로 사용
-                            sort=False
-                        )
-
-                        # =================================================
-                        # 국 종류별 횟수 표
-                        # =================================================
-
-                        st.subheader(
-                            "📋 국 종류별 횟수"
-                        )
-
-                        # -------------------------------------------------
-                        # 표도 많이 나온 순서로 표시
-                        # -------------------------------------------------
-
-                        display_df = soup_df.sort_values(
-                            "횟수",
-                            ascending=False,
-                            kind="stable"
-                        ).reset_index(
+                        .reset_index(
                             drop=True
                         )
+                    )
 
-                        # -------------------------------------------------
-                        # 순번 추가
-                        # -------------------------------------------------
+                    # -------------------------------------------------
+                    # 가장 많이 나온 횟수
+                    # -------------------------------------------------
 
-                        display_df.index = (
-                            display_df.index + 1
+                    max_count = int(
+                        sorted_soup_df[
+                            "횟수"
+                        ].max()
+                    )
+
+                    # -------------------------------------------------
+                    # 공동 1위
+                    # -------------------------------------------------
+
+                    top_soups = (
+                        sorted_soup_df[
+                            sorted_soup_df[
+                                "횟수"
+                            ] == max_count
+                        ][
+                            "국 종류"
+                        ]
+                        .tolist()
+                    )
+
+                    # -------------------------------------------------
+                    # 결과 표시
+                    # -------------------------------------------------
+
+                    col1, col2 = st.columns(
+                        2
+                    )
+
+                    with col1:
+
+                        st.metric(
+                            "가장 많이 나온 국",
+                            ", ".join(
+                                top_soups
+                            )
                         )
 
-                        # -------------------------------------------------
-                        # 표 표시
-                        # -------------------------------------------------
+                    with col2:
 
-                        st.dataframe(
-                            display_df,
-                            use_container_width=True
+                        st.metric(
+                            "등장 횟수",
+                            f"{max_count}회"
                         )
+
+                    if len(
+                        top_soups
+                    ) > 1:
+
+                        st.info(
+                            "🏆 공동 1위: "
+                            + ", ".join(
+                                top_soups
+                            )
+                            + f" ({max_count}회)"
+                        )
+
+                    # =================================================
+                    # 그래프
+                    # =================================================
+
+                    st.subheader(
+                        "📊 국 종류별 등장 횟수"
+                    )
+
+                    chart_df = (
+                        sorted_soup_df
+                        .copy()
+                    )
+
+                    fig = px.bar(
+                        chart_df,
+                        x="국 종류",
+                        y="횟수",
+                        text="횟수",
+                        title="국 종류별 등장 횟수"
+                    )
+
+                    fig.update_traces(
+                        textposition="outside",
+                        cliponaxis=False
+                    )
+
+                    fig.update_xaxes(
+                        title_text="국 종류",
+                        tickangle=0,
+                        categoryorder="array",
+                        categoryarray=chart_df[
+                            "국 종류"
+                        ].tolist(),
+                        automargin=True
+                    )
+
+                    fig.update_yaxes(
+                        title_text="횟수",
+                        dtick=1,
+                        rangemode="tozero"
+                    )
+
+                    fig.update_layout(
+                        height=600,
+                        margin=dict(
+                            l=60,
+                            r=40,
+                            t=80,
+                            b=140
+                        ),
+                        hovermode="x unified"
+                    )
+
+                    st.plotly_chart(
+                        fig,
+                        use_container_width=True
+                    )
+
+                    # -------------------------------------------------
+                    # 공동 1위 안내
+                    # -------------------------------------------------
+
+                    if len(
+                        top_soups
+                    ) > 1:
+
+                        st.caption(
+                            "※ "
+                            f"{max_count}회로 "
+                            "가장 많이 나온 국은 "
+                            + ", ".join(
+                                top_soups
+                            )
+                            + "입니다."
+                        )
+
+                    # =================================================
+                    # 표
+                    # =================================================
+
+                    st.subheader(
+                        "📋 국 종류별 횟수"
+                    )
+
+                    display_df = (
+                        sorted_soup_df
+                        .copy()
+                    )
+
+                    display_df.index = (
+                        display_df.index + 1
+                    )
+
+                    st.dataframe(
+                        display_df,
+                        use_container_width=True
+                    )

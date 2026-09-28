@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import re
+import plotly.express as px
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 
@@ -150,9 +151,7 @@ def search_school_with_fallback(keyword):
 
     all_results = []
 
-    search_keywords = get_search_keywords(
-        keyword
-    )
+    search_keywords = get_search_keywords(keyword)
 
     for word in search_keywords:
 
@@ -199,6 +198,7 @@ def get_meal_data(
         "SD_SCHUL_CODE":
             school_code,
 
+        # 2 = 중식
         "MMEAL_SC_CODE":
             "2",
 
@@ -241,7 +241,7 @@ def get_meal_data(
 
 
 # =========================================================
-# 여러 날의 급식 데이터 가져오기
+# 여러 날의 급식 데이터
 # =========================================================
 
 @st.cache_data(ttl=3600)
@@ -366,7 +366,7 @@ def get_all_meal_data(
 
 
 # =========================================================
-# 원본 메뉴 표시
+# 원본 메뉴 표시용
 # =========================================================
 
 def format_menu(menu_text):
@@ -468,7 +468,6 @@ def is_soup(menu):
             return True
 
     soup_names = [
-
         "육개장",
         "닭개장",
         "감자탕",
@@ -480,7 +479,6 @@ def is_soup(menu):
         "도가니탕",
         "순대국",
         "순댓국"
-
     ]
 
     if menu in soup_names:
@@ -548,13 +546,8 @@ def analyze_soups(meal_rows):
     ).value_counts()
 
     result = pd.DataFrame({
-
-        "국 종류":
-            count_series.index,
-
-        "횟수":
-            count_series.values
-
+        "국 종류": count_series.index,
+        "횟수": count_series.values
     })
 
     return result
@@ -573,7 +566,7 @@ school_keyword = st.text_input(
 
 
 # =========================================================
-# 검색 결과
+# 학교 검색 결과
 # =========================================================
 
 if school_keyword.strip():
@@ -873,25 +866,30 @@ if school_keyword.strip():
                 else:
 
                     # =================================================
-                    # 숫자 기준 내림차순
+                    # 숫자 기준 내림차순 정렬
                     # =================================================
 
                     sorted_soup_df = (
                         soup_df
                         .sort_values(
                             by="횟수",
-                            ascending=False
+                            ascending=False,
+                            kind="stable"
                         )
                         .reset_index(drop=True)
                     )
 
                     # =================================================
-                    # 공동 1위
+                    # 가장 많이 나온 횟수
                     # =================================================
 
                     max_count = int(
                         sorted_soup_df["횟수"].max()
                     )
+
+                    # =================================================
+                    # 공동 1위
+                    # =================================================
 
                     top_soups = (
                         sorted_soup_df[
@@ -901,22 +899,31 @@ if school_keyword.strip():
                     )
 
                     # =================================================
-                    # 가장 많이 나온 국
+                    # 결과
                     # =================================================
 
-                    st.subheader(
-                        "🏆 가장 많이 나온 국"
-                    )
+                    col1, col2 = st.columns(2)
 
-                    st.success(
-                        f"{', '.join(top_soups)} "
-                        f"— {max_count}회"
-                    )
+                    with col1:
+
+                        st.metric(
+                            "가장 많이 나온 국",
+                            ", ".join(top_soups)
+                        )
+
+                    with col2:
+
+                        st.metric(
+                            "등장 횟수",
+                            f"{max_count}회"
+                        )
 
                     if len(top_soups) > 1:
 
                         st.info(
-                            "공동 1위입니다."
+                            "🏆 공동 1위: "
+                            + ", ".join(top_soups)
+                            + f" ({max_count}회)"
                         )
 
                     # =================================================
@@ -927,17 +934,88 @@ if school_keyword.strip():
                         "📊 국 종류별 등장 횟수"
                     )
 
-                    # Streamlit 기본 bar chart 사용
-                    # → plotly 설치가 필요 없음
-
                     chart_df = (
                         sorted_soup_df
-                        .set_index("국 종류")
+                        .copy()
                     )
 
-                    st.bar_chart(
-                        chart_df["횟수"],
-                        height=600
+                    # 중요:
+                    # 횟수가 많은 국이 왼쪽부터 나오도록
+                    # categoryarray를 직접 지정한다.
+
+                    category_order = (
+                        chart_df["국 종류"]
+                        .tolist()
+                    )
+
+                    fig = px.bar(
+                        chart_df,
+                        x="국 종류",
+                        y="횟수",
+                        text="횟수",
+                        title="국 종류별 등장 횟수"
+                    )
+
+                    # 막대 위에 횟수 표시
+
+                    fig.update_traces(
+                        textposition="outside",
+                        cliponaxis=False
+                    )
+
+                    # =================================================
+                    # X축 설정
+                    # =================================================
+
+                    fig.update_xaxes(
+                        title_text="국 종류",
+
+                        # 글자를 가로로 표시
+                        tickangle=0,
+
+                        # 데이터프레임 순서를 그대로 사용
+                        categoryorder="array",
+
+                        categoryarray=category_order,
+
+                        # 긴 한글 이름도 잘리지 않게
+                        automargin=True
+                    )
+
+                    # =================================================
+                    # Y축 설정
+                    # =================================================
+
+                    fig.update_yaxes(
+                        title_text="횟수",
+                        dtick=1,
+                        rangemode="tozero"
+                    )
+
+                    # =================================================
+                    # 전체 그래프 설정
+                    # =================================================
+
+                    fig.update_layout(
+                        height=600,
+
+                        margin=dict(
+                            l=60,
+                            r=40,
+                            t=80,
+                            b=120
+                        ),
+
+                        # 가로축 순서를 뒤집지 않음
+                        xaxis=dict(
+                            categoryorder="array",
+                            categoryarray=category_order
+                        )
+                    )
+
+                    st.plotly_chart(
+                        fig,
+                        use_container_width=True
                     )
 
                     # =================================================

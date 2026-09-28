@@ -42,7 +42,6 @@ MEAL_API = "https://open.neis.go.kr/hub/mealServiceDietInfo"
 # =========================================================
 
 KST = ZoneInfo("Asia/Seoul")
-
 today_korea = datetime.now(KST).date()
 
 
@@ -103,8 +102,6 @@ def get_search_keywords(keyword):
 
     keywords = [keyword]
 
-    # 여고 → 여자고등학교
-
     if "여고" in keyword:
 
         keywords.append(
@@ -114,23 +111,17 @@ def get_search_keywords(keyword):
             )
         )
 
-    # 마지막 글자가 고
-
     if keyword.endswith("고"):
 
         keywords.append(
             keyword[:-1] + "고등학교"
         )
 
-    # 마지막 글자가 중
-
     if keyword.endswith("중"):
 
         keywords.append(
             keyword[:-1] + "중학교"
         )
-
-    # 마지막 글자가 초
 
     if keyword.endswith("초"):
 
@@ -169,16 +160,18 @@ def search_school_with_fallback(keyword):
             )
 
             if not already_exists:
+
                 all_results.append(school)
 
         if all_results:
+
             break
 
     return all_results
 
 
 # =========================================================
-# 특정 날짜의 중식 가져오기
+# 특정 날짜 중식
 # =========================================================
 
 @st.cache_data(ttl=3600)
@@ -198,7 +191,6 @@ def get_meal_data(
         "SD_SCHUL_CODE":
             school_code,
 
-        # 2 = 중식
         "MMEAL_SC_CODE":
             "2",
 
@@ -241,7 +233,7 @@ def get_meal_data(
 
 
 # =========================================================
-# 여러 날의 급식 데이터 가져오기
+# 여러 날 급식 데이터
 # =========================================================
 
 @st.cache_data(ttl=3600)
@@ -339,8 +331,6 @@ def get_all_meal_data(
             current_end + timedelta(days=1)
         )
 
-    # 중복 제거
-
     unique_rows = {}
 
     for row in all_rows:
@@ -397,15 +387,11 @@ def clean_menu_name(menu):
         flags=re.IGNORECASE
     )
 
-    # 괄호 안 알레르기 번호 제거
-
     menu = re.sub(
         r"\([^)]*\)",
         "",
         menu
     )
-
-    # 대괄호 제거
 
     menu = re.sub(
         r"\[[^\]]*\]",
@@ -413,15 +399,11 @@ def clean_menu_name(menu):
         menu
     )
 
-    # 5.6.13. 같은 알레르기 번호 제거
-
     menu = re.sub(
         r"(?:\d+\.)+\s*$",
         "",
         menu
     )
-
-    # 끝의 숫자 제거
 
     menu = re.sub(
         r"(?:\d+\s*)+$",
@@ -543,16 +525,14 @@ def analyze_soups(meal_rows):
         soup_list
     ).value_counts()
 
-    result = pd.DataFrame({
+    return pd.DataFrame({
         "국 종류": count_series.index,
         "횟수": count_series.values
     })
 
-    return result
-
 
 # =========================================================
-# 학교 검색
+# 학교 검색 화면
 # =========================================================
 
 st.subheader("🏫 학교 검색")
@@ -564,7 +544,7 @@ school_keyword = st.text_input(
 
 
 # =========================================================
-# 학교 검색 결과
+# 검색 결과
 # =========================================================
 
 if school_keyword.strip():
@@ -577,20 +557,12 @@ if school_keyword.strip():
             school_keyword.strip()
         )
 
-    # =====================================================
-    # 학교 없음
-    # =====================================================
-
     if not schools:
 
         st.info(
             "🔎 검색된 학교가 없습니다. "
             "학교 이름을 다시 확인해 주세요."
         )
-
-    # =====================================================
-    # 학교 있음
-    # =====================================================
 
     else:
 
@@ -749,8 +721,6 @@ if school_keyword.strip():
                         ""
                     )
 
-                    # 메뉴
-
                     st.markdown(
                         "### 🍱 오늘의 메뉴"
                     )
@@ -761,11 +731,7 @@ if school_keyword.strip():
                             menu_text
                         )
 
-                        menu_items = formatted_menu.split(
-                            "\n"
-                        )
-
-                        for menu in menu_items:
+                        for menu in formatted_menu.split("\n"):
 
                             menu = menu.strip()
 
@@ -781,8 +747,6 @@ if school_keyword.strip():
                             "메뉴 정보가 등록되어 있지 않습니다."
                         )
 
-                    # 칼로리
-
                     st.markdown(
                         "### 🔥 칼로리"
                     )
@@ -796,8 +760,6 @@ if school_keyword.strip():
                         st.info(
                             "칼로리 정보가 등록되어 있지 않습니다."
                         )
-
-                    # 원본
 
                     with st.expander(
                         "📋 원본 메뉴 정보 보기"
@@ -864,7 +826,7 @@ if school_keyword.strip():
                 else:
 
                     # =================================================
-                    # 횟수 기준 내림차순
+                    # 횟수 숫자 기준 내림차순
                     # =================================================
 
                     sorted_soup_df = (
@@ -897,7 +859,7 @@ if school_keyword.strip():
                     )
 
                     # =================================================
-                    # 결과 표시
+                    # 가장 많이 나온 국
                     # =================================================
 
                     col1, col2 = st.columns(2)
@@ -932,146 +894,165 @@ if school_keyword.strip():
                         "📊 국 종류별 등장 횟수"
                     )
 
+                    chart_df = sorted_soup_df.copy()
+
+                    # =================================================
+                    # 중요: 횟수 열을 숫자로 확실하게 변환
+                    # =================================================
+
+                    chart_df["횟수"] = pd.to_numeric(
+                        chart_df["횟수"],
+                        errors="coerce"
+                    )
+
+                    chart_df = chart_df.dropna(
+                        subset=["횟수"]
+                    )
+
+                    # 다시 숫자 기준으로 정렬
                     chart_df = (
-                        sorted_soup_df.copy()
+                        chart_df
+                        .sort_values(
+                            by="횟수",
+                            ascending=False,
+                            kind="stable"
+                        )
+                        .reset_index(drop=True)
                     )
 
-                    # -------------------------------------------------
-                    # 그래프의 가로 길이
-                    # -------------------------------------------------
-                    #
-                    # 국 종류가 많을수록 그래프를 넓게 만든다.
-                    # 한 종류당 최소 70px 정도의 공간을 확보한다.
-                    #
-                    # 예:
-                    # 10개 → 1,000px
-                    # 30개 → 2,100px
-                    # 50개 → 3,500px
-                    #
-                    # 따라서 한 화면에 억지로 전부 넣지 않고
-                    # 가로로 넘겨 보면서 확인할 수 있다.
-                    # -------------------------------------------------
-
-                    number_of_soups = len(chart_df)
-
-                    chart_width = max(
-                        1200,
-                        number_of_soups * 75
-                    )
-
-                    # -------------------------------------------------
-                    # x축 순서를 직접 지정
-                    # -------------------------------------------------
+                    # =================================================
+                    # X축 순서
+                    # =================================================
 
                     category_order = (
                         chart_df["국 종류"]
                         .tolist()
                     )
 
-                    # -------------------------------------------------
-                    # Plotly 그래프
-                    # -------------------------------------------------
+                    # =================================================
+                    # 그래프 폭
+                    # =================================================
+
+                    number_of_soups = len(
+                        chart_df
+                    )
+
+                    chart_width = max(
+                        1200,
+                        number_of_soups * 75
+                    )
+
+                    # =================================================
+                    # 그래프 만들기
+                    # =================================================
 
                     fig = px.bar(
                         chart_df,
                         x="국 종류",
                         y="횟수",
                         text="횟수",
-                        title="국 종류별 등장 횟수"
+                        title="국 종류별 등장 횟수",
+                        category_orders={
+                            "국 종류": category_order
+                        }
                     )
 
-                    # -------------------------------------------------
+                    # =================================================
                     # 막대 위 숫자
-                    # -------------------------------------------------
+                    # =================================================
 
                     fig.update_traces(
                         textposition="outside",
+                        textfont=dict(
+                            size=12
+                        ),
                         cliponaxis=False
                     )
 
-                    # -------------------------------------------------
+                    # =================================================
                     # X축
-                    # -------------------------------------------------
+                    # =================================================
 
                     fig.update_xaxes(
-
                         title_text="국 종류",
-
-                        # 글자를 가로로 표시
                         tickangle=0,
-
-                        # 정렬 순서 고정
                         categoryorder="array",
-
                         categoryarray=category_order,
-
-                        # 글자 크기
                         tickfont=dict(
-                            size=12
+                            size=13
                         ),
-
-                        # 축 제목과 글자 사이 공간
                         automargin=True
                     )
 
-                    # -------------------------------------------------
+                    # =================================================
                     # Y축
-                    # -------------------------------------------------
+                    # =================================================
+
+                    # 핵심 수정 부분
+                    #
+                    # 최대값이 4라면
+                    # 0 → 1 → 2 → 3 → 4를 정확하게 사용한다.
+                    #
+                    # 그래서 4회와 3회의 높이 차이가
+                    # 확실하게 보인다.
+
+                    y_max = max_count
 
                     fig.update_yaxes(
-
                         title_text="횟수",
-
+                        tickmode="linear",
+                        tick0=0,
                         dtick=1,
-
-                        rangemode="tozero",
-
+                        range=[
+                            0,
+                            y_max + 0.35
+                        ],
+                        rangemode="normal",
                         tickfont=dict(
                             size=12
                         )
                     )
 
-                    # -------------------------------------------------
-                    # 그래프 전체
-                    # -------------------------------------------------
+                    # =================================================
+                    # 전체 그래프
+                    # =================================================
 
                     fig.update_layout(
 
-                        # 핵심:
-                        # 국 종류가 많으면 그래프 자체를 넓게 만든다.
                         width=chart_width,
 
-                        height=600,
+                        height=650,
 
                         margin=dict(
                             l=70,
                             r=40,
-                            t=80,
+                            t=90,
                             b=150
                         ),
 
                         # 막대 사이 간격
-                        bargap=0.25,
+                        bargap=0.20,
 
-                        # x축 순서 다시 고정
+                        # x축 순서 확정
                         xaxis=dict(
                             categoryorder="array",
                             categoryarray=category_order
+                        ),
+
+                        # Y축 범위 확정
+                        yaxis=dict(
+                            range=[
+                                0,
+                                y_max + 0.35
+                            ],
+                            dtick=1
                         )
                     )
 
-                    # -------------------------------------------------
-                    # 안내
-                    # -------------------------------------------------
-
                     st.caption(
-                        "💡 국 종류가 많아서 그래프를 넓게 만들었습니다. "
-                        "아래 그래프를 좌우로 이동하면서 국 이름을 확인할 수 있습니다."
+                        "💡 횟수가 많은 국부터 왼쪽에 표시됩니다. "
+                        "국 종류가 많으면 그래프를 좌우로 이동해서 확인할 수 있습니다."
                     )
-
-                    # -------------------------------------------------
-                    # 그래프 출력
-                    # -------------------------------------------------
 
                     st.plotly_chart(
                         fig,
@@ -1087,7 +1068,7 @@ if school_keyword.strip():
                     )
 
                     display_df = (
-                        sorted_soup_df.copy()
+                        chart_df.copy()
                     )
 
                     display_df.index = (
